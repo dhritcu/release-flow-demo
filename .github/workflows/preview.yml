@@ -1,0 +1,17 @@
+# Every pull request gets its own Vercel deployment. On the Supabase Free plan all
+# previews share one "preview" database; with branching (Pro) each pull request
+# would get its own branch database instead.
+name: Preview
+
+on:
+  pull_request:
+
+concurrency: { group: "preview-${{ github.event.number }}", cancel-in-progress: true }
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: preview
+      sha: ${{ github.event.pull_request.head.sha }}
+    secrets: inherit

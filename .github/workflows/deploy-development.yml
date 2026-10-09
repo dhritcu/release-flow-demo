@@ -1,0 +1,15 @@
+# development follows main automatically. Nobody runs QA here.
+name: Deploy development
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: development
+      sha: ${{ github.sha }}
+      alias: ${{ vars.DEVELOPMENT_ALIAS }}
+    secrets: inherit

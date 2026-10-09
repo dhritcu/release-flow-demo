@@ -1,0 +1,16 @@
+{
+  "name": "release-flow-demo",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "test": "node --test",
+    "lint:migrations": "squawk supabase/migrations/*.sql"
+  },
+  "dependencies": {
+    "postgres": "3.4.7"
+  },
+  "devDependencies": {
+    "squawk-cli": "2.68.0"
+  }
+}

@@ -1,0 +1,65 @@
+# Reusable deploy: one commit SHA to one environment. Migrations run first, so the
+# previous deployment briefly runs against the new schema (hence expand-only).
+name: Deploy (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment: { type: string, required: true }
+      sha: { type: string, required: true }
+      alias: { type: string, required: false, default: "" }
+    outputs:
+      url: { value: "${{ jobs.deploy.outputs.url }}" }
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
+    concurrency: { group: "deploy-${{ inputs.environment }}", cancel-in-progress: false }
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      # Each GitHub environment holds its own database connection strings.
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+      VERCEL_TARGET: ${{ inputs.environment == 'production' && 'production' || 'preview' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.sha }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: supabase/setup-cli@v1
+        with: { version: 2.75.0 }
+      - run: npm ci
+
+      - name: Apply pending migrations
+        run: supabase migration up --db-url "$MIGRATION_DATABASE_URL" ${{ vars.MIGRATION_FLAGS }}
+
+      - name: Build and deploy to Vercel
+        id: deploy
+        run: |
+          npx vercel@63.1.0 pull --yes --environment="$VERCEL_TARGET" --token="$VERCEL_TOKEN"
+          prod_flag=""; [ "$VERCEL_TARGET" = production ] && prod_flag="--prod"
+          npx vercel@63.1.0 build $prod_flag --token="$VERCEL_TOKEN"
+          url=$(npx vercel@63.1.0 deploy --prebuilt $prod_flag --token="$VERCEL_TOKEN" \
+            --env DATABASE_URL="$DATABASE_URL" \
+            --env APP_ENV="${{ inputs.environment }}" \
+            --env APP_SHA="${{ inputs.sha }}")
+          if [ -n "${{ inputs.alias }}" ]; then
+            npx vercel@63.1.0 alias set "$url" "${{ inputs.alias }}" --token="$VERCEL_TOKEN"
+            url="https://${{ inputs.alias }}"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Deployed to \`${{ inputs.environment }}\`"
+            echo "- Commit: [\`${{ inputs.sha }}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ inputs.sha }})"
+            echo "- URL: ${{ steps.deploy.outputs.url }}"
+          } >> "$GITHUB_STEP_SUMMARY"

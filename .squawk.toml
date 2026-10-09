@@ -1,0 +1,2 @@
+# The Supabase CLI runs each migration file inside a transaction.
+assume_in_transaction = true

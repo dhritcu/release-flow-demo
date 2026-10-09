@@ -1,0 +1,9 @@
+body { font-family: system-ui, sans-serif; margin: 0; background: #f6f6f4; color: #1d1d1b; }
+main { max-width: 32rem; margin: 3rem auto; padding: 0 1rem; }
+form { display: flex; gap: .5rem; }
+input { flex: 1; padding: .6rem; font: inherit; }
+button { padding: .6rem 1rem; font: inherit; cursor: pointer; }
+ul { list-style: none; padding: 0; }
+li { padding: .6rem 0; border-bottom: 1px solid #ddd; cursor: pointer; }
+li.done { text-decoration: line-through; color: #888; }
+footer { position: fixed; bottom: 0; left: 0; right: 0; padding: .5rem 1rem; font: 12px ui-monospace, monospace; background: #1d1d1b; color: #f6f6f4; }

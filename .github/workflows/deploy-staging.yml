@@ -1,0 +1,46 @@
+# Pins staging to one commit for QA. Merges to main never move it.
+name: Deploy staging
+run-name: "Staging ← ${{ inputs.ref }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA, tag, or branch to put on staging"
+        required: true
+        default: main
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Resolve the commit and check where it comes from
+        id: sha
+        env: { REF: "${{ inputs.ref }}" }
+        run: |
+          sha=$(git rev-parse --verify "origin/$REF^{commit}" 2>/dev/null || git rev-parse --verify "$REF^{commit}")
+          if ! git branch -r --contains "$sha" | grep -qE 'origin/(main|release/)'; then
+            echo "::error::$sha is not on main or a release/* branch."; exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Require green CI for that commit
+        env: { GH_TOKEN: "${{ github.token }}", SHA: "${{ steps.sha.outputs.sha }}" }
+        run: |
+          failing=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
+            --jq '[.check_runs[] | select(.name=="test" or .name=="migration-safety") | select(.conclusion!="success")] | length')
+          passed=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
+            --jq '[.check_runs[] | select(.name=="test" or .name=="migration-safety") | select(.conclusion=="success")] | length')
+          if [ "$failing" != 0 ] || [ "$passed" -lt 2 ]; then echo "::error::CI is not green for $SHA."; exit 1; fi
+
+  deploy:
+    needs: resolve
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: staging
+      sha: ${{ needs.resolve.outputs.sha }}
+      alias: ${{ vars.STAGING_ALIAS }}
+    secrets: inherit
