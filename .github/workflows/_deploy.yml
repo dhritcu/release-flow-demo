@@ -51,7 +51,7 @@ jobs:
             --env APP_ENV="${{ inputs.environment }}" \
             --env APP_SHA="${{ inputs.sha }}")
           if [ -n "${{ inputs.alias }}" ]; then
-            npx vercel@63.1.0 alias set "$url" "${{ inputs.alias }}" --token="$VERCEL_TOKEN"
+            npx vercel@63.1.0 alias set "$url" "${{ inputs.alias }}" --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
             url="https://${{ inputs.alias }}"
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
