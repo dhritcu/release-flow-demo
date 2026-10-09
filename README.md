@@ -19,11 +19,12 @@ is nothing to merge back.
 ## Normal release
 
 1. Merge pull requests to `main`. Unfinished work stays behind a flag in `flags.json`.
-2. **Actions → Deploy staging → Run workflow**, enter the commit to test.
+2. **Actions → Deploy staging → Run workflow**. The default puts the tip of
+   `main` on staging and records its SHA.
 3. QA tests staging. Merges to `main` keep going and never move staging.
-4. **Actions → Cut release → Run workflow** with the same SHA. It checks that the
-   commit passed on staging, creates a `v*` tag and starts **Deploy production**
-   on that tag.
+4. **Actions → Cut release → Run workflow** with no input. It releases the
+   commit staging runs, creates a `v*` tag and starts **Deploy production** on
+   that tag.
 5. A reviewer approves the `production` environment. The workflow deploys and
    publishes release notes for everything since the previous tag.
 
@@ -35,7 +36,7 @@ git cherry-pick -x <fix-sha>                   # the fix merged to main first
 git push -u origin release/v2026.10.09
 ```
 
-Then deploy that branch's commit to staging and cut a release from it. The fix
+Then run **Deploy staging** with `release/v2026.10.09` and **Cut release**. The fix
 already lives on `main`, so the release branch is never merged anywhere.
 
 ## Migration rules
