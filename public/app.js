@@ -6,7 +6,8 @@ async function render() {
   list.replaceChildren(
     ...todos.map((todo) => {
       const item = document.createElement("li");
-      item.textContent = todo.urgent ? `● ${todo.title}` : todo.title;
+      const due = todo.due_on ? ` (due ${todo.due_on.slice(0, 10)})` : "";
+      item.textContent = (todo.urgent ? `● ${todo.title}` : todo.title) + due;
       item.classList.toggle("done", todo.done);
       item.onclick = async () => {
         await fetch(`/api/todos?id=${todo.id}`, { method: "PATCH" });
@@ -22,7 +23,7 @@ form.onsubmit = async (event) => {
   await fetch("/api/todos", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ title: form.title.value, urgent: form.urgent.checked }),
+    body: JSON.stringify({ title: form.title.value, urgent: form.urgent.checked, dueOn: form.dueOn.value }),
   });
   form.reset();
   render();
