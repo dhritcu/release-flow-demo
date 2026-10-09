@@ -11,7 +11,7 @@ hotfixes that never need a backmerge.
 | **preview** | a pull request's head commit | that pull request gets a push |
 | **development** | the tip of `main` | anything merges to `main` (automatic) |
 | **staging** | one pinned commit | someone runs **Deploy staging** with a SHA |
-| **production** | a `v*` tag | someone runs **Cut release**, then a reviewer approves |
+| **production** | the commit of a `v*` tag | someone runs **Cut release**, then a reviewer approves |
 
 `main` is the only long-lived branch. Deploying never creates a commit, so there
 is nothing to merge back.
@@ -23,8 +23,8 @@ is nothing to merge back.
    `main` on staging and records its SHA.
 3. QA tests staging. Merges to `main` keep going and never move staging.
 4. **Actions → Cut release → Run workflow** with no input. It releases the
-   commit staging runs, creates a `v*` tag and starts **Deploy production** on
-   that tag.
+   commit staging runs, creates a `v*` tag and starts **Deploy production** for
+   that tag. The pipeline always runs from `main`; only the code comes from the tag.
 5. A reviewer approves the `production` environment. The workflow deploys and
    publishes release notes for everything since the previous tag.
 
