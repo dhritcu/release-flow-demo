@@ -8,8 +8,8 @@ export default async function handler(req, res) {
       return res.status(200).json(todos);
     }
     if (req.method === "POST") {
-      const { title, urgent = false, dueOn = null } = req.body ?? {};
-      parseTitle(title);
+      const { urgent = false, dueOn = null } = req.body ?? {};
+      const title = parseTitle(req.body?.title);
       const [todo] = await sql`
         insert into todos (title, urgent, due_on) values (${title}, ${Boolean(urgent)}, ${dueOn || null})
         returning id, title, done, urgent, due_on`;
