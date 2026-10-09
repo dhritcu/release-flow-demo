@@ -4,18 +4,21 @@ import { parseTitle } from "../lib/todos.js";
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
-      const todos = await sql`select id, title, done from todos order by id`;
+      const todos = await sql`select id, title, done, urgent from todos order by urgent desc, id`;
       return res.status(200).json(todos);
     }
     if (req.method === "POST") {
-      const title = parseTitle(req.body?.title);
-      const [todo] = await sql`insert into todos (title) values (${title}) returning id, title, done`;
+      const { title, urgent = false } = req.body ?? {};
+      parseTitle(title);
+      const [todo] = await sql`
+        insert into todos (title, urgent) values (${title}, ${Boolean(urgent)})
+        returning id, title, done, urgent`;
       return res.status(201).json(todo);
     }
     if (req.method === "PATCH") {
       const [todo] = await sql`
         update todos set done = not done where id = ${Number(req.query.id)}
-        returning id, title, done`;
+        returning id, title, done, urgent`;
       return todo ? res.status(200).json(todo) : res.status(404).json({ error: "Not found" });
     }
     res.setHeader("Allow", "GET, POST, PATCH");
