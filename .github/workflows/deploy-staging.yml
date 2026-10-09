@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Commit SHA, tag, or branch to put on staging"
+        description: "Branch, tag or SHA. Default: the tip of main. Use release/<tag> for a hotfix."
         required: true
         default: main
 
