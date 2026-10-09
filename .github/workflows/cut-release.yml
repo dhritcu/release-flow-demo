@@ -1,0 +1,42 @@
+# Turns a commit that passed QA on staging into a release tag, then starts the
+# production deployment on that tag. The tag is the only way into production.
+name: Cut release
+run-name: "Cut release from ${{ inputs.sha }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA that passed QA on staging"
+        required: true
+
+permissions:
+  contents: write
+  actions: write
+  deployments: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: The commit must have a successful staging deployment
+        id: verify
+        env: { GH_TOKEN: "${{ github.token }}", INPUT: "${{ inputs.sha }}" }
+        run: |
+          sha=$(git rev-parse --verify "$INPUT^{commit}")
+          ok=0
+          for id in $(gh api "repos/${{ github.repository }}/deployments?environment=staging&sha=$sha" --jq '.[].id'); do
+            [ "$(gh api "repos/${{ github.repository }}/deployments/$id/statuses" --jq '.[0].state')" = success ] && ok=1
+          done
+          if [ "$ok" != 1 ]; then echo "::error::$sha never deployed to staging successfully."; exit 1; fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Create the tag and start the production deployment
+        env: { GH_TOKEN: "${{ github.token }}", SHA: "${{ steps.verify.outputs.sha }}" }
+        run: |
+          base="v$(date -u +%Y.%m.%d)"; tag="$base"; n=1
+          while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do tag="$base.$n"; n=$((n+1)); done
+          gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" >/dev/null
+          gh workflow run deploy-production.yml --ref "$tag"
+          echo "Tagged \`$tag\` → \`$SHA\` and started **Deploy production** on it." >> "$GITHUB_STEP_SUMMARY"

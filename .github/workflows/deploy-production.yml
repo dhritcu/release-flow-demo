@@ -1,0 +1,32 @@
+# Runs only on a v* tag (the production environment rejects any other ref) and
+# waits for a reviewer. After the deploy it publishes notes since the last release.
+name: Deploy production
+run-name: "Production ← ${{ github.ref_name }}"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  deployments: write
+
+jobs:
+  deploy:
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: production
+      sha: ${{ github.sha }}
+    secrets: inherit
+
+  release-notes:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release notes since the previous release
+        env: { GH_TOKEN: "${{ github.token }}", TAG: "${{ github.ref_name }}" }
+        run: |
+          previous=$(gh release view --repo "${{ github.repository }}" --json tagName --jq .tagName 2>/dev/null || true)
+          args=(--repo "${{ github.repository }}" --verify-tag --title "$TAG" --generate-notes)
+          [ -n "$previous" ] && args+=(--notes-start-tag "$previous")
+          gh release create "$TAG" "${args[@]}"
