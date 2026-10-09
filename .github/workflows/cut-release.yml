@@ -1,19 +1,18 @@
-# Turns the commit that staging runs (the one QA approved) into a release tag,
+# Turns the commit that staging serves (the one QA approved) into a release tag,
 # then starts the production deployment on that tag. Nobody types a SHA.
+#
+# The commit comes from staging itself (/api/version), not from GitHub's
+# deployment records: those store the workflow run's commit (main), not the
+# commit a run deploys, so they are wrong for a release branch or pinned SHA.
 name: Cut release
-run-name: "Cut release from ${{ inputs.sha || 'what staging runs' }}"
+run-name: "Cut release from what staging serves"
 
 on:
   workflow_dispatch:
-    inputs:
-      sha:
-        description: "Leave empty to release what staging runs now. Override only to release an older staging commit."
-        required: false
 
 permissions:
   contents: write
   actions: write
-  deployments: read
 
 jobs:
   tag:
@@ -21,22 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - name: Find the commit and check that it passed on staging
+      - name: Read the commit that staging serves
         id: verify
-        env: { GH_TOKEN: "${{ github.token }}", INPUT: "${{ inputs.sha }}" }
         run: |
-          api="repos/${{ github.repository }}/deployments?environment=staging"
-          if [ -z "$INPUT" ]; then
-            sha=$(gh api "$api&per_page=1" --jq '.[0].sha')
-            echo "Staging runs $sha"
-          else
-            sha=$(git rev-parse --verify "$INPUT^{commit}")
-          fi
-          ok=0
-          for id in $(gh api "$api&sha=$sha" --jq '.[].id'); do
-            [ "$(gh api "repos/${{ github.repository }}/deployments/$id/statuses" --jq '.[0].state')" = success ] && ok=1
-          done
-          if [ "$ok" != 1 ]; then echo "::error::$sha never deployed to staging successfully."; exit 1; fi
+          sha=$(curl -fsS "https://${{ vars.STAGING_ALIAS }}/api/version" | jq -r .sha)
+          git cat-file -e "$sha^{commit}" || { echo "::error::Staging reports unknown commit $sha."; exit 1; }
+          echo "Staging serves $sha"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
       # GITHUB_TOKEN cannot create a ref on a commit whose workflow files differ
       # from main, so tagging uses a token with the workflows permission.
