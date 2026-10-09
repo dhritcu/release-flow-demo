@@ -46,5 +46,5 @@ jobs:
           base="v$(date -u +%Y.%m.%d)"; tag="$base"; n=1
           while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do tag="$base.$n"; n=$((n+1)); done
           gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" >/dev/null
-          gh workflow run deploy-production.yml --ref main -f tag="$tag"
+          GH_TOKEN="${{ github.token }}" gh workflow run deploy-production.yml --ref main -f tag="$tag"
           echo "Tagged \`$tag\` → \`$SHA\` and started **Deploy production** on it." >> "$GITHUB_STEP_SUMMARY"
