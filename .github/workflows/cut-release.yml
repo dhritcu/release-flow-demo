@@ -38,11 +38,13 @@ jobs:
           done
           if [ "$ok" != 1 ]; then echo "::error::$sha never deployed to staging successfully."; exit 1; fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      # GITHUB_TOKEN cannot create a ref on a commit whose workflow files differ
+      # from main, so tagging uses a token with the workflows permission.
       - name: Create the tag and start the production deployment
-        env: { GH_TOKEN: "${{ github.token }}", SHA: "${{ steps.verify.outputs.sha }}" }
+        env: { GH_TOKEN: "${{ secrets.RELEASE_TOKEN }}", SHA: "${{ steps.verify.outputs.sha }}" }
         run: |
           base="v$(date -u +%Y.%m.%d)"; tag="$base"; n=1
           while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do tag="$base.$n"; n=$((n+1)); done
           gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" >/dev/null
-          gh workflow run deploy-production.yml --ref "$tag"
+          gh workflow run deploy-production.yml --ref main -f tag="$tag"
           echo "Tagged \`$tag\` → \`$SHA\` and started **Deploy production** on it." >> "$GITHUB_STEP_SUMMARY"
