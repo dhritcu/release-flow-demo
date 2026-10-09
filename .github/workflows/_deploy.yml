@@ -37,8 +37,22 @@ jobs:
         with: { version: 2.75.0 }
       - run: npm ci
 
+      # Environments receive migrations in different orders: a hotfix can ship C to
+      # production while B (older timestamp) still waits on main, and a hotfix branch
+      # can land on an environment that already runs B. With expand-only migrations
+      # both are safe, so:
+      # - placeholders for versions the database has but this commit lacks make the
+      #   CLI accept that history (it never re-runs a version it has recorded);
+      # - --include-all applies files older than the database's newest version.
       - name: Apply pending migrations
-        run: supabase migration up --db-url "$MIGRATION_DATABASE_URL" ${{ vars.MIGRATION_FLAGS }}
+        run: |
+          ahead=$(supabase migration list --db-url "$MIGRATION_DATABASE_URL" 2>/dev/null |
+            awk -F'|' '$1 ~ /^ *$/ && $2 ~ /[0-9]{14}/ { gsub(/ /, "", $2); print $2 }')
+          for version in $ahead; do
+            echo "::notice::The database already has $version, which this commit lacks. Keeping it."
+            echo "-- Applied by a newer commit." > "supabase/migrations/${version}_already_applied.sql"
+          done
+          supabase migration up --db-url "$MIGRATION_DATABASE_URL" --include-all
 
       - name: Build and deploy to Vercel
         id: deploy
