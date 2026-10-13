@@ -56,7 +56,8 @@ run by hand.
 | `v2026.10.14.2-rc.1` | the next candidate that day |
 
 The number is `vYYYY.MM.DD.N` (UTC date, N from 1). A candidate keeps its number
-until it ships or a new day starts. `development` gets no tags; `/api/version`
+until it ships or a new day starts. Deploying staging with a commit that already
+has a version (a release or a candidate) keeps that version. `development` gets no tags; `/api/version`
 shows the commit and, on staging and production, the version.
 
 ## Branches
