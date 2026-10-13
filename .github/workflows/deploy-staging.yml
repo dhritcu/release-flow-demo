@@ -76,4 +76,8 @@ jobs:
             previous=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
             gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --notes "$(scripts/release-notes.sh "$TAG" "$previous")"
           fi
-          echo "Staging runs release candidate \`$TAG\` (\`${SHA::7}\`). **Cut release** ships it as \`${TAG%-rc.*}\`." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$TAG" == *-rc.* ]]; then
+            echo "Staging runs release candidate \`$TAG\` (\`${SHA::7}\`). **Cut release** ships it as \`${TAG%-rc.*}\`." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Staging runs \`$TAG\` (\`${SHA::7}\`), already released." >> "$GITHUB_STEP_SUMMARY"
+          fi
