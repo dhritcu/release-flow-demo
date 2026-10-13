@@ -32,7 +32,7 @@ jobs:
         id: tag
         env: { GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}", COMMIT: "${{ inputs.commit }}" }
         run: |
-          [[ "$TAG" == v* ]] || { echo "::error::$TAG is not a release tag."; exit 1; }
+          [[ "$TAG" == v* && "$TAG" != *-* ]] || { echo "::error::$TAG is not a release tag (release candidates ship through Cut release)."; exit 1; }
           sha=$(gh api "repos/${{ github.repository }}/commits/refs/tags/$TAG" --jq .sha)
           [[ -z "$COMMIT" || "$sha" == "$COMMIT"* ]] || { echo "::error::$TAG points at $sha, not $COMMIT."; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
@@ -43,6 +43,7 @@ jobs:
     with:
       environment: production
       sha: ${{ needs.resolve.outputs.sha }}
+      version: ${{ inputs.tag }}
     secrets: inherit
 
   release-notes:
@@ -59,20 +60,5 @@ jobs:
             exit 0
           fi
           previous=$(gh release view --repo "$REPO" --json tagName --jq .tagName 2>/dev/null || true)
-          args=(-f tag_name="$TAG")
-          [ -n "$previous" ] && args+=(-f previous_tag_name="$previous")
-          notes=$(gh api "repos/$REPO/releases/generate-notes" "${args[@]}" --jq .body)
-
-          # A hotfix ships a cherry-pick (-x) of a PR already merged to main. When that
-          # PR reaches a later release from main, production already has it: leave it out.
-          mapfile -t tags < <(git tag --list 'v*')
-          shipped=$(git log --format=%B "${tags[@]}" |
-            sed -nE 's/^\(cherry picked from commit ([0-9a-f]{40})\)$/\1/p' | sort -u)
-          for sha in $shipped; do
-            for pr in $(gh api "repos/$REPO/commits/$sha/pulls" --jq '.[].number'); do
-              notes=$(grep -v "/pull/$pr\$" <<<"$notes" || true)
-            done
-          done
-          # Drop category headings whose PRs were all left out.
-          notes=$(awk '/^### /{ heading=$0; next } /^\* /{ if (heading != "") print heading; heading="" } { print }' <<<"$notes")
-          gh release create "$TAG" --repo "$REPO" --verify-tag --title "$TAG" --notes "$notes"
+          gh release create "$TAG" --repo "$REPO" --verify-tag --latest --title "$TAG" \
+            --notes "$(GITHUB_REPOSITORY="$REPO" scripts/release-notes.sh "$TAG" "$previous")"

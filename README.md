@@ -18,30 +18,54 @@ is nothing to merge back.
 
 ## Normal release
 
-1. QA each pull request on its own preview deployment, then merge it to `main`.
-   `main` only receives finished work, so any commit on it can ship.
+1. Merge pull requests to `main`; `development` deploys each merge.
 2. **Actions → Deploy staging → Run workflow**. The default puts the tip of
-   `main` on staging and records its SHA.
-3. QA tests staging. Merges to `main` keep going and never move staging.
-4. **Actions → Cut release → Run workflow** with no input. It releases the
-   commit staging runs, creates a `v*` tag and starts **Deploy production** for
-   that tag. The pipeline always runs from `main`; only the code comes from the tag.
+   `main` on staging as a release candidate: tag `v2026.10.14.1-rc.1` and a
+   GitHub pre-release with the notes since the last production release.
+3. QA tests staging. Merges to `main` keep going and never move staging. If QA
+   rejects something, fix or revert it on `main` and deploy staging again:
+   `v2026.10.14.1-rc.2`.
+4. **Actions → Cut release → Run workflow** with no input. It ships the candidate
+   staging runs as `v2026.10.14.1` (same commit, no `-rc`) and starts **Deploy
+   production** for that tag. The pipeline always runs from `main`; only the code
+   comes from the tag.
 5. A reviewer approves the `production` environment. The workflow deploys and
-   publishes release notes for everything since the previous tag.
+   publishes the release, marked Latest.
 
 ## Hotfix when `main` is not ready to ship
 
 1. Merge the fix to `main` with a normal pull request.
 2. **Actions → Start hotfix → Run workflow** with that pull request's number. It
-   reads the tag production runs, creates `release/<tag>` if needed, cherry-picks
+   reads the release production runs, creates `release/<tag>` if needed, cherry-picks
    the fix with `-x` and opens the hotfix pull request into that branch.
 3. Review and merge the hotfix pull request.
-4. Run **Deploy staging** with `release/<tag>`, then **Cut release**, as for a
-   normal release.
+4. Run **Deploy staging** with `release/<tag>` (a new candidate), then **Cut
+   release**, as for a normal release.
 
 The fix already lives on `main`, so the release branch is never merged anywhere.
 When the cherry-pick conflicts, the workflow stops and prints the two commands to
 run by hand.
+
+## Versions
+
+| Tag | Meaning |
+|---|---|
+| `v2026.10.14.1-rc.1` | release candidate on staging (GitHub pre-release) |
+| `v2026.10.14.1-rc.2` | staging re-pinned before that version shipped |
+| `v2026.10.14.1` | shipped to production (GitHub release, Latest) |
+| `v2026.10.14.2-rc.1` | the next candidate that day |
+
+The number is `vYYYY.MM.DD.N` (UTC date, N from 1). A candidate keeps its number
+until it ships or a new day starts. `development` gets no tags; `/api/version`
+shows the commit and, on staging and production, the version.
+
+## Branches
+
+`main` is the only long-lived branch. A `release/<tag>` branch exists only for a
+release that needed a hotfix: **Start hotfix** creates it from that tag. Releases
+without a hotfix have just their tag, which is all a rollback or a later hotfix
+needs. Release branches are never merged and are kept (the ruleset blocks
+deleting them).
 
 ## Rollback
 

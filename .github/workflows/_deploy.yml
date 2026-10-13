@@ -8,6 +8,7 @@ on:
       environment: { type: string, required: true }
       sha: { type: string, required: true }
       alias: { type: string, required: false, default: "" }
+      version: { type: string, required: false, default: "" }
     outputs:
       url: { value: "${{ jobs.deploy.outputs.url }}" }
 
@@ -63,7 +64,8 @@ jobs:
           url=$(npx vercel@63.1.0 deploy --prebuilt $prod_flag --token="$VERCEL_TOKEN" \
             --env DATABASE_URL="$DATABASE_URL" \
             --env APP_ENV="${{ inputs.environment }}" \
-            --env APP_SHA="${{ inputs.sha }}")
+            --env APP_SHA="${{ inputs.sha }}" \
+            --env APP_VERSION="${{ inputs.version }}")
           if [ -n "${{ inputs.alias }}" ]; then
             npx vercel@63.1.0 alias set "$url" "${{ inputs.alias }}" --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
             url="https://${{ inputs.alias }}"

@@ -1,5 +1,6 @@
-# Turns the commit that staging serves (the one QA approved) into a release tag,
-# then starts the production deployment on that tag. Nobody types a SHA.
+# Ships the release candidate staging serves (the one QA approved): tags its commit
+# vYYYY.MM.DD.N, without the -rc.M, then starts the production deployment on that
+# tag. Nobody types a SHA or a version.
 #
 # The commit comes from staging itself (/api/version), not from GitHub's
 # deployment records: those store the workflow run's commit (main), not the
@@ -32,10 +33,11 @@ jobs:
       - name: Create the tag and start the production deployment
         env: { GH_TOKEN: "${{ secrets.RELEASE_TOKEN }}", SHA: "${{ steps.verify.outputs.sha }}" }
         run: |
-          # vYYYY.MM.DD.N (UTC date), N counting from 1 within the day.
-          base="v$(date -u +%Y.%m.%d)"
-          last=$(git tag --list "$base.*" | sed -nE "s/^${base//./\\.}\.([0-9]+)$/\1/p" | sort -n | tail -1)
-          tag="$base.$(( ${last:-0} + 1 ))"
+          # Ship the candidate staging runs: v2026.10.14.1-rc.2 becomes v2026.10.14.1.
+          rc=$(git tag --points-at "$SHA" --list 'v*-rc.*' | sort -V | tail -1)
+          [ -n "$rc" ] || { echo "::error::Staging runs $SHA, which has no release candidate tag. Run Deploy staging first."; exit 1; }
+          tag="${rc%-rc.*}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then echo "::error::$tag is already released."; exit 1; fi
           gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" >/dev/null
           GH_TOKEN="${{ github.token }}" gh workflow run deploy-production.yml --ref main -f tag="$tag" -f commit="${SHA::7}"
-          echo "Tagged \`$tag\` → \`$SHA\` and started **Deploy production** on it." >> "$GITHUB_STEP_SUMMARY"
+          echo "Tagged \`$tag\` (from \`$rc\`) → \`$SHA\` and started **Deploy production** on it." >> "$GITHUB_STEP_SUMMARY"

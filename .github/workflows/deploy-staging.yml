@@ -1,4 +1,5 @@
 # Pins staging to one commit for QA. Merges to main never move it.
+# Each pin is a release candidate: tag vYYYY.MM.DD.N-rc.M and a GitHub pre-release.
 name: Deploy staging
 run-name: "Staging ← ${{ inputs.ref }}"
 
@@ -10,11 +11,15 @@ on:
         required: true
         default: main
 
+permissions:
+  contents: write
+
 jobs:
   resolve:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
+      candidate: ${{ steps.candidate.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -35,6 +40,9 @@ jobs:
           passed=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
             --jq '[.check_runs[] | select(.name=="test" or .name=="migration-safety") | select(.conclusion=="success")] | length')
           if [ "$failing" != 0 ] || [ "$passed" -lt 2 ]; then echo "::error::CI is not green for $SHA."; exit 1; fi
+      - name: Choose the release candidate
+        id: candidate
+        run: echo "tag=$(scripts/next-candidate.sh '${{ steps.sha.outputs.sha }}')" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: resolve
@@ -43,4 +51,29 @@ jobs:
       environment: staging
       sha: ${{ needs.resolve.outputs.sha }}
       alias: ${{ vars.STAGING_ALIAS }}
+      version: ${{ needs.resolve.outputs.candidate }}
     secrets: inherit
+
+  candidate:
+    needs: [resolve, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Tag the candidate and publish it as a pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.candidate }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          # The bot token tags: GITHUB_TOKEN cannot create a ref on a commit whose workflow files differ from main.
+          if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            GH_TOKEN="$RELEASE_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$SHA" >/dev/null
+            git fetch -q origin "refs/tags/$TAG:refs/tags/$TAG"
+          fi
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            previous=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
+            gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --notes "$(scripts/release-notes.sh "$TAG" "$previous")"
+          fi
+          echo "Staging runs release candidate \`$TAG\` (\`${SHA::7}\`). **Cut release** ships it as \`${TAG%-rc.*}\`." >> "$GITHUB_STEP_SUMMARY"

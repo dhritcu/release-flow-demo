@@ -31,5 +31,5 @@ form.onsubmit = async (event) => {
 
 const version = await (await fetch("/api/version")).json();
 document.querySelector("#version").textContent =
-  `env: ${version.environment} · commit: ${version.sha.slice(0, 7)}`;
+  `env: ${version.environment} · ${version.version ? `${version.version} · ` : ""}commit: ${version.sha.slice(0, 7)}`;
 render();

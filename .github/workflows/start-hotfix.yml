@@ -32,7 +32,7 @@ jobs:
             echo "::error::#$PR is not merged to main. A hotfix copies a fix that main already has."; exit 1
           fi
           sha=$(curl -fsS "https://${{ vars.PRODUCTION_ALIAS }}/api/version" | jq -r .sha)
-          tag=$(git tag --points-at "$sha" --list 'v*' --sort=-v:refname | head -1)
+          tag=$(git tag --points-at "$sha" --list 'v*' | grep -v -- '-rc\.' | sort -V | tail -1 || true)
           [ -n "$tag" ] || { echo "::error::Production runs $sha, which has no release tag."; exit 1; }
           {
             echo "fix=$(jq -r .mergeCommit.oid <<<"$pr")"
