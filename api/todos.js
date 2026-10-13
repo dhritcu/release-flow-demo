@@ -1,5 +1,5 @@
 import { sql } from "../lib/db.js";
-import { parseDueOn, parseId, parseTitle } from "../lib/todos.js";
+import { parseDueOn, parseId, parseTitle, parseUrgent } from "../lib/todos.js";
 
 export default async function handler(req, res) {
   try {
@@ -8,7 +8,7 @@ export default async function handler(req, res) {
       return res.status(200).json(todos);
     }
     if (req.method === "POST") {
-      const urgent = Boolean(req.body?.urgent);
+      const urgent = parseUrgent(req.body?.urgent);
       const title = parseTitle(req.body?.title);
       const dueOn = parseDueOn(req.body?.dueOn);
       const [todo] = await sql`
