@@ -1,0 +1,71 @@
+# Copies a fix that is already on main onto the release branch of what production
+# runs, and opens the hotfix PR. A person only reviews and merges it, then runs
+# Deploy staging with the release branch and Cut release, as for any release.
+name: Start hotfix
+run-name: "Start hotfix from #${{ inputs.pr }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Number of the fix PR already merged to main"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  hotfix:
+    runs-on: ubuntu-latest
+    steps:
+      # The bot token pushes the branches and opens the PR: GITHUB_TOKEN cannot push
+      # a commit whose workflow files differ from main, and its PRs would not run CI.
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, token: "${{ secrets.RELEASE_TOKEN }}" }
+
+      - name: Find the fix and the release production runs
+        id: find
+        env: { GH_TOKEN: "${{ github.token }}", PR: "${{ inputs.pr }}" }
+        run: |
+          pr=$(gh pr view "$PR" --json state,baseRefName,mergeCommit,title,labels)
+          if [ "$(jq -r .state <<<"$pr")" != MERGED ] || [ "$(jq -r .baseRefName <<<"$pr")" != main ]; then
+            echo "::error::#$PR is not merged to main. A hotfix copies a fix that main already has."; exit 1
+          fi
+          sha=$(curl -fsS "https://${{ vars.PRODUCTION_ALIAS }}/api/version" | jq -r .sha)
+          tag=$(git tag --points-at "$sha" --list 'v*' --sort=-v:refname | head -1)
+          [ -n "$tag" ] || { echo "::error::Production runs $sha, which has no release tag."; exit 1; }
+          {
+            echo "fix=$(jq -r .mergeCommit.oid <<<"$pr")"
+            echo "tag=$tag"
+            echo "labels=$(jq -r '[.labels[].name] | join(",")' <<<"$pr")"
+            echo "title<<EOF_TITLE"; jq -r .title <<<"$pr"; echo "EOF_TITLE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Cherry-pick onto the release branch and open the PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          PR: ${{ inputs.pr }}
+          FIX: ${{ steps.find.outputs.fix }}
+          TAG: ${{ steps.find.outputs.tag }}
+          LABELS: ${{ steps.find.outputs.labels }}
+          TITLE: ${{ steps.find.outputs.title }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          release="release/$TAG" branch="hotfix/pr-$PR"
+          if git ls-remote --exit-code --heads origin "$release" >/dev/null; then
+            git switch -c "$release" "origin/$release"
+          else
+            git switch -c "$release" "$TAG"
+            git push origin "$release"
+          fi
+          git switch -c "$branch"
+          if ! git cherry-pick -x "$FIX"; then
+            echo "::error::#$PR does not apply cleanly to $TAG. Resolve it by hand: git switch -c $branch origin/$release && git cherry-pick -x $FIX"
+            exit 1
+          fi
+          git push origin "$branch"
+          url=$(gh pr create --base "$release" --head "$branch" ${LABELS:+--label "$LABELS"} \
+            --title "Hotfix for $TAG: $TITLE" \
+            --body "Cherry-pick of #$PR onto \`$TAG\`, which production runs. After merge: **Deploy staging** with \`$release\`, then **Cut release**.")
+          echo "Opened $url: #$PR onto \`$release\`." >> "$GITHUB_STEP_SUMMARY"

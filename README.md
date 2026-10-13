@@ -18,7 +18,8 @@ is nothing to merge back.
 
 ## Normal release
 
-1. Merge pull requests to `main`. Unfinished work stays behind a flag in `flags.json`.
+1. QA each pull request on its own preview deployment, then merge it to `main`.
+   `main` only receives finished work, so any commit on it can ship.
 2. **Actions → Deploy staging → Run workflow**. The default puts the tip of
    `main` on staging and records its SHA.
 3. QA tests staging. Merges to `main` keep going and never move staging.
@@ -30,14 +31,31 @@ is nothing to merge back.
 
 ## Hotfix when `main` is not ready to ship
 
-```sh
-git switch -c release/v2026.10.09 v2026.10.09   # start from what production runs
-git cherry-pick -x <fix-sha>                   # the fix merged to main first
-git push -u origin release/v2026.10.09
-```
+1. Merge the fix to `main` with a normal pull request.
+2. **Actions → Start hotfix → Run workflow** with that pull request's number. It
+   reads the tag production runs, creates `release/<tag>` if needed, cherry-picks
+   the fix with `-x` and opens the hotfix pull request into that branch.
+3. Review and merge the hotfix pull request.
+4. Run **Deploy staging** with `release/<tag>`, then **Cut release**, as for a
+   normal release.
 
-Then run **Deploy staging** with `release/v2026.10.09` and **Cut release**. The fix
-already lives on `main`, so the release branch is never merged anywhere.
+The fix already lives on `main`, so the release branch is never merged anywhere.
+When the cherry-pick conflicts, the workflow stops and prints the two commands to
+run by hand.
+
+## Rollback
+
+Run **Deploy production** with an older tag. It still needs a reviewer. The
+release notes of that tag stay as they are, and the migration step keeps any newer
+migrations the database already has.
+
+## Approvals
+
+- Pull requests into `main` and `release/**` need passing checks; the real repo
+  also requires one approval. Bot-opened pull requests (like Start hotfix's) are
+  approved by either developer.
+- The `production` environment needs one reviewer. Admins cannot bypass it.
+  Approving your own run is allowed, because the team has two developers.
 
 ## Migration rules
 

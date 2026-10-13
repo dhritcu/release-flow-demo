@@ -1,15 +1,22 @@
 # Deploys a release tag to production. The pipeline always comes from main, so
 # pipeline fixes apply to every release, and the code always comes from the tag.
 # The production environment only accepts runs from main and needs a reviewer.
+#
+# Rollback = run this again with an older tag. Expand-only migrations keep the
+# newer schema compatible, and the migration step accepts a database that is ahead.
 name: Deploy production
-run-name: "Production ← ${{ inputs.tag }}"
+run-name: "Production ← ${{ inputs.tag }}${{ inputs.commit && format(' ({0})', inputs.commit) || '' }}"
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (v*) created by Cut release"
+        description: "Release tag (v*). Cut release fills this in; an older tag rolls back."
         required: true
+      commit:
+        description: "Short SHA the tag must point at. Cut release fills it in so the approver sees it."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -23,10 +30,11 @@ jobs:
     steps:
       - name: The input must be an existing v* tag
         id: tag
-        env: { GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}" }
+        env: { GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}", COMMIT: "${{ inputs.commit }}" }
         run: |
           [[ "$TAG" == v* ]] || { echo "::error::$TAG is not a release tag."; exit 1; }
           sha=$(gh api "repos/${{ github.repository }}/commits/refs/tags/$TAG" --jq .sha)
+          [[ -z "$COMMIT" || "$sha" == "$COMMIT"* ]] || { echo "::error::$TAG points at $sha, not $COMMIT."; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
   deploy:
@@ -44,6 +52,10 @@ jobs:
       - name: Publish release notes since the previous release
         env: { GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}" }
         run: |
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Redeployed the existing release \`$TAG\` (rollback or retry); its notes stay as they are." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           previous=$(gh release view --repo "${{ github.repository }}" --json tagName --jq .tagName 2>/dev/null || true)
           args=(--repo "${{ github.repository }}" --verify-tag --title "$TAG" --generate-notes)
           [ -n "$previous" ] && args+=(--notes-start-tag "$previous")
