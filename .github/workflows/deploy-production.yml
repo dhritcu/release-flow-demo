@@ -73,4 +73,6 @@ jobs:
               notes=$(grep -v "/pull/$pr\$" <<<"$notes" || true)
             done
           done
+          # Drop category headings whose PRs were all left out.
+          notes=$(awk '/^### /{ heading=$0; next } /^\* /{ if (heading != "") print heading; heading="" } { print }' <<<"$notes")
           gh release create "$TAG" --repo "$REPO" --verify-tag --title "$TAG" --notes "$notes"
