@@ -18,4 +18,8 @@ for sha in $shipped; do
     notes=$(grep -v "/pull/$pr\$" <<<"$notes" || true)
   done
 done
+if ! grep -q '^\* ' <<<"$notes"; then
+  echo "No pull requests since ${previous:-the first release}."
+  exit 0
+fi
 awk '/^### /{ heading=$0; next } /^\* /{ if (heading != "") print heading; heading="" } { print }' <<<"$notes"

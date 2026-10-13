@@ -10,7 +10,7 @@ hotfixes that never need a backmerge.
 |---|---|---|
 | **preview** | a pull request's head commit | that pull request gets a push |
 | **development** | the tip of `main` | anything merges to `main` (automatic) |
-| **staging** | one pinned commit | someone runs **Deploy staging** with a SHA |
+| **staging** | one pinned commit | someone runs **Deploy staging** (default: the tip of `main`) |
 | **production** | the commit of a `v*` tag | someone runs **Cut release**, then a reviewer approves |
 
 `main` is the only long-lived branch. Deploying never creates a commit, so there
@@ -25,7 +25,8 @@ is nothing to merge back.
 3. QA tests staging. Merges to `main` keep going and never move staging. If QA
    rejects something, fix or revert it on `main` and deploy staging again:
    `v2026.10.14.1-rc.2`.
-4. **Actions → Cut release → Run workflow** with no input. It ships the candidate
+4. **Actions → Cut release → Run workflow**. No input needed; optionally type the
+   candidate QA signed off, and it stops if staging runs anything else. It ships the candidate
    staging runs as `v2026.10.14.1` (same commit, no `-rc`) and starts **Deploy
    production** for that tag. The pipeline always runs from `main`; only the code
    comes from the tag.
@@ -55,9 +56,11 @@ run by hand.
 | `v2026.10.14.1` | shipped to production (GitHub release, Latest) |
 | `v2026.10.14.2-rc.1` | the next candidate that day |
 
-The number is `vYYYY.MM.DD.N` (UTC date, N from 1). A candidate keeps its number
-until it ships or a new day starts. Deploying staging with a commit that already
-has a version (a release or a candidate) keeps that version. `development` gets no tags; `/api/version`
+The number is `vYYYY.MM.DD.N` (UTC date, N from 1). Re-pinning staging to a later
+commit on the same line continues the candidate (`-rc.2`). Anything else, such as a
+hotfix while a candidate is in QA, takes the next number; once the hotfix ships, the
+QA candidate is renumbered after it. A commit that already has a release, or a
+candidate still ahead of every release, keeps it. `development` gets no tags; `/api/version`
 shows the commit and, on staging and production, the version.
 
 ## Branches
@@ -70,7 +73,8 @@ deleting them).
 
 ## Rollback
 
-Run **Deploy production** with an older tag. It still needs a reviewer. The
+Run **Deploy production** with an older tag, and its commit so the approver sees it.
+It still needs a reviewer, and only takes tags that went through staging. The
 release notes of that tag stay as they are, and the migration step keeps any newer
 migrations the database already has.
 
