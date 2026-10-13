@@ -35,6 +35,11 @@ jobs:
           git cat-file -e "$sha^{commit}" || { echo "::error::Staging reports unknown commit $sha."; exit 1; }
           echo "Staging serves $sha"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      # A candidate staged before a newer release shipped would silently undo it.
+      - name: The candidate includes what production runs
+        run: |
+          production=$(curl -fsS "https://${{ vars.PRODUCTION_ALIAS }}/api/version" | jq -r .sha)
+          scripts/includes-production.sh "${{ steps.verify.outputs.sha }}" "$production"
       # GITHUB_TOKEN cannot create a ref on a commit whose workflow files differ
       # from main, so tagging uses a token with the workflows permission.
       - name: Create the tag and start the production deployment

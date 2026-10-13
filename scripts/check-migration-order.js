@@ -1,6 +1,7 @@
 // Fails when a branch adds a migration whose timestamp is older than the newest
-// migration already on the target branch. Out-of-order files get skipped or
-// rejected by `supabase migration up`, so the author renames the file instead.
+// migration already on the target branch, so each branch keeps one ordered history
+// and the author renames the file before merge (never after). Deploys still accept
+// out-of-order files across environments (`--include-all`) for hotfixes.
 import { execFileSync } from "node:child_process";
 
 const base = process.argv[2];

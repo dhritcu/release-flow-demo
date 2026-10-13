@@ -25,8 +25,9 @@ is nothing to merge back.
 3. QA tests staging. Merges to `main` keep going and never move staging. If QA
    rejects something, fix or revert it on `main` and deploy staging again:
    `v2026.10.14.1-rc.2`.
-4. **Actions → Cut release → Run workflow**. No input needed; optionally type the
-   candidate QA signed off, and it stops if staging runs anything else. It ships the candidate
+4. **Actions → Cut release → Run workflow**. Type the candidate QA signed off (optional
+   but recommended): it stops if staging runs anything else. It also stops if the
+   candidate lacks something production runs. It ships the candidate
    staging runs as `v2026.10.14.1` (same commit, no `-rc`) and starts **Deploy
    production** for that tag. The pipeline always runs from `main`; only the code
    comes from the tag.
@@ -52,7 +53,7 @@ run by hand.
 | Tag | Meaning |
 |---|---|
 | `v2026.10.14.1-rc.1` | release candidate on staging (GitHub pre-release) |
-| `v2026.10.14.1-rc.2` | staging re-pinned before that version shipped |
+| `v2026.10.14.1-rc.2` | staging re-pinned to a later commit on the same line |
 | `v2026.10.14.1` | shipped to production (GitHub release, Latest) |
 | `v2026.10.14.2-rc.1` | the next candidate that day |
 
