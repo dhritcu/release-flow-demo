@@ -6,10 +6,17 @@
 #   v2026.10.14.2-rc.1   next version, once v2026.10.14.1 shipped
 #
 # A candidate keeps its number until it ships (Cut release drops the -rc.M) or a
-# new day starts. A commit that already has the open candidate's latest tag keeps it.
+# new day starts. A commit that already has a version keeps it.
 # Usage: next-candidate.sh <sha> [YYYY.MM.DD]
 set -euo pipefail
 sha=$1
+
+# A commit that already has a version keeps it: its release, else its candidate.
+tags=$(git tag --points-at "$sha" --list 'v*')
+existing=$(grep -v -- '-rc\.' <<<"$tags" | sort -V | tail -1 || true)
+[ -n "$existing" ] || existing=$(grep -- '-rc\.' <<<"$tags" | sort -V | tail -1 || true)
+[ -n "$existing" ] && { echo "$existing"; exit 0; }
+
 base="v${2:-$(date -u +%Y.%m.%d)}"
 pattern="^${base//./\\.}\\.([0-9]+)(-rc\\.([0-9]+))?$"
 
