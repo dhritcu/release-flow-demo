@@ -49,14 +49,28 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - name: Publish release notes since the previous release
-        env: { GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}" }
+        env: { GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}", REPO: "${{ github.repository }}" }
         run: |
-          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
             echo "Redeployed the existing release \`$TAG\` (rollback or retry); its notes stay as they are." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          previous=$(gh release view --repo "${{ github.repository }}" --json tagName --jq .tagName 2>/dev/null || true)
-          args=(--repo "${{ github.repository }}" --verify-tag --title "$TAG" --generate-notes)
-          [ -n "$previous" ] && args+=(--notes-start-tag "$previous")
-          gh release create "$TAG" "${args[@]}"
+          previous=$(gh release view --repo "$REPO" --json tagName --jq .tagName 2>/dev/null || true)
+          args=(-f tag_name="$TAG")
+          [ -n "$previous" ] && args+=(-f previous_tag_name="$previous")
+          notes=$(gh api "repos/$REPO/releases/generate-notes" "${args[@]}" --jq .body)
+
+          # A hotfix ships a cherry-pick (-x) of a PR already merged to main. When that
+          # PR reaches a later release from main, production already has it: leave it out.
+          mapfile -t tags < <(git tag --list 'v*')
+          shipped=$(git log --format=%B "${tags[@]}" |
+            sed -nE 's/^\(cherry picked from commit ([0-9a-f]{40})\)$/\1/p' | sort -u)
+          for sha in $shipped; do
+            for pr in $(gh api "repos/$REPO/commits/$sha/pulls" --jq '.[].number'); do
+              notes=$(grep -v "/pull/$pr\$" <<<"$notes" || true)
+            done
+          done
+          gh release create "$TAG" --repo "$REPO" --verify-tag --title "$TAG" --notes "$notes"
