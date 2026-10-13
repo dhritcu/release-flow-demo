@@ -1,38 +1,40 @@
 #!/usr/bin/env bash
-# Prints the release-candidate tag for a commit going to staging.
+# Prints the version for a commit going to staging.
 #
 #   v2026.10.14.1-rc.1   first candidate of the day
-#   v2026.10.14.1-rc.2   staging re-pinned before that version shipped
-#   v2026.10.14.2-rc.1   next version, once v2026.10.14.1 shipped
+#   v2026.10.14.1-rc.2   staging re-pinned to a later commit on the same line
+#   v2026.10.14.2-rc.1   anything else: next version, after everything used today
 #
-# A candidate keeps its number until it ships (Cut release drops the -rc.M) or a
-# new day starts. A commit that already has a version keeps it.
+# A commit keeps its release tag, or its candidate tag while that version is still
+# ahead of every release that day. A hotfix during QA is not on the candidate's line,
+# so it gets its own version; the QA candidate is renumbered once the hotfix ships.
 # Usage: next-candidate.sh <sha> [YYYY.MM.DD]
 set -euo pipefail
-sha=$1
-
-# A commit that already has a version keeps it: its release, else its candidate.
-tags=$(git tag --points-at "$sha" --list 'v*')
-existing=$(grep -v -- '-rc\.' <<<"$tags" | sort -V | tail -1 || true)
-[ -n "$existing" ] || existing=$(grep -- '-rc\.' <<<"$tags" | sort -V | tail -1 || true)
-[ -n "$existing" ] && { echo "$existing"; exit 0; }
-
+sha=$(git rev-parse "$1^{commit}")
 base="v${2:-$(date -u +%Y.%m.%d)}"
-pattern="^${base//./\\.}\\.([0-9]+)(-rc\\.([0-9]+))?$"
+day="^${base//./\\.}\\.([0-9]+)"
 
-# Highest version number used today, by a release or a candidate.
-last=$(git tag --list "$base.*" | sed -nE "s/$pattern/\\1/p" | sort -n | tail -1)
-[ -z "$last" ] && { echo "$base.1-rc.1"; exit 0; }
+numbers() { sed -nE "s/$day$1$/\\1/p" | sort -n; }
+released=$(git tag --list "$base.*" | numbers "" | tail -1)
+used=$(git tag --list "$base.*" | numbers "(-rc\\.[0-9]+)?" | tail -1)
+released=${released:-0} used=${used:-0}
 
-version="$base.$last"
-if git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
-  echo "$base.$((last + 1))-rc.1"   # that version shipped: start the next one
-  exit 0
+# The commit already has a version.
+tags=$(git tag --points-at "$sha" --list 'v*')
+release=$(grep -v -- '-rc\.' <<<"$tags" | sort -V | tail -1 || true)
+[ -n "$release" ] && { echo "$release"; exit 0; }
+candidate=$(grep -E "$day-rc\\.[0-9]+$" <<<"$tags" | sort -V | tail -1 || true)
+if [ -n "$candidate" ] && [ "$(numbers "-rc\\.[0-9]+" <<<"$candidate")" -gt "$released" ]; then
+  echo "$candidate"; exit 0
 fi
 
-latest_rc=$(git tag --list "$version-rc.*" | sed -nE "s/^.*-rc\\.([0-9]+)$/\\1/p" | sort -n | tail -1)
-if [ "$(git rev-parse "refs/tags/$version-rc.$latest_rc^{commit}")" = "$(git rev-parse "$sha^{commit}")" ]; then
-  echo "$version-rc.$latest_rc"     # same commit re-deployed: same candidate
-else
-  echo "$version-rc.$((latest_rc + 1))"
+# Staging re-pinned forward on the line of the open candidate.
+if [ "$used" -gt "$released" ]; then
+  open="$base.$used"
+  latest=$(git tag --list "$open-rc.*" | sort -V | tail -1)
+  if [ -n "$latest" ] && git merge-base --is-ancestor "$latest" "$sha"; then
+    echo "$open-rc.$(( ${latest##*-rc.} + 1 ))"; exit 0
+  fi
 fi
+
+echo "$base.$((used + 1))-rc.1"

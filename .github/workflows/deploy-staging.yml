@@ -14,6 +14,9 @@ on:
 permissions:
   contents: write
 
+# One staging change at a time; Cut release joins this queue so it never reads staging mid-deploy.
+concurrency: { group: staging, cancel-in-progress: false }
+
 jobs:
   resolve:
     runs-on: ubuntu-latest
