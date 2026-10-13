@@ -1,5 +1,5 @@
 import { sql } from "../lib/db.js";
-import { parseTitle } from "../lib/todos.js";
+import { parseId, parseTitle } from "../lib/todos.js";
 
 export default async function handler(req, res) {
   try {
@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     }
     if (req.method === "PATCH") {
       const [todo] = await sql`
-        update todos set done = not done, completed_at = case when done then null else now() end where id = ${Number(req.query.id)}
+        update todos set done = not done, completed_at = case when done then null else now() end where id = ${parseId(req.query.id)}
         returning id, title, done, urgent, due_on`;
       return todo ? res.status(200).json(todo) : res.status(404).json({ error: "Not found" });
     }
