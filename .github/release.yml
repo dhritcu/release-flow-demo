@@ -6,5 +6,7 @@ changelog:
       labels: [fix]
     - title: Database migrations
       labels: [migration]
+    - title: Release pipeline
+      labels: [pipeline]
     - title: Other changes
       labels: ["*"]
