@@ -24,7 +24,7 @@ is nothing to merge back.
    GitHub pre-release with the notes since the last production release.
 3. QA tests staging. Merges to `main` keep going and never move staging. If QA
    rejects something, fix or revert it on `main` and deploy staging again:
-   `v2026.10.14.1-rc.2`.
+   `v2026.10.14.1-rc.2`, whose notes link to what changed since `-rc.1`.
 4. **Actions → Cut release → Run workflow** with the candidate QA signed off (required):
    it stops if staging runs anything else. It also stops if the
    candidate lacks something production runs. It ships the candidate
