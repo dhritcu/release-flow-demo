@@ -4,7 +4,7 @@ import { parseDueOn, parseId, parseTitle, parseUrgent } from "../lib/todos.js";
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
-      const todos = await sql`select id, title, done, urgent, due_on, notes from todos order by urgent desc, id`;
+      const todos = await sql`select id, title, done, urgent, due_on, notes, completed_at from todos order by urgent desc, id`;
       return res.status(200).json(todos);
     }
     if (req.method === "POST") {
