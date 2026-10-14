@@ -9,8 +9,10 @@ args=(-f tag_name="$tag")
 [ -n "$previous" ] && args+=(-f previous_tag_name="$previous")
 notes=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" --jq .body)
 
+# Only real releases count as shipped, not pre-releases still on (or rejected from) staging.
 releases=()
-while read -r t; do releases+=("$t"); done < <(git tag --list 'v*' | grep -v -- '-rc\.')
+while read -r t; do releases+=("$t"); done < <(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+  --jq '.[] | select(.prerelease | not) | .tag_name' | grep -v -- '-rc\.')
 shipped=$(git log --format=%B "${releases[@]}" |
   sed -nE 's/^\(cherry picked from commit ([0-9a-f]{40})\)$/\1/p' | sort -u)
 for sha in $shipped; do

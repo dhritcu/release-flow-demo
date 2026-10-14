@@ -1,5 +1,6 @@
-# Pins staging to one commit for QA. Merges to main never move it.
-# Each pin is a release candidate: tag vYYYY.MM.DD.N-rc.M and a GitHub pre-release.
+# Puts one version on staging for QA. Merges to main never move it.
+# Every new commit gets the next version (vYYYY.MM.DD.N), published as a GitHub
+# pre-release; Cut release later ships that same version.
 name: Deploy staging
 run-name: "Staging ← ${{ inputs.ref }}"
 
@@ -22,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
-      candidate: ${{ steps.candidate.outputs.tag }}
+      version: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
@@ -43,9 +44,9 @@ jobs:
           passed=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
             --jq '[.check_runs[] | select(.name=="test" or .name=="migration-safety") | select(.conclusion=="success")] | length')
           if [ "$failing" != 0 ] || [ "$passed" -lt 2 ]; then echo "::error::CI is not green for $SHA."; exit 1; fi
-      - name: Choose the release candidate
-        id: candidate
-        run: echo "tag=$(scripts/next-candidate.sh '${{ steps.sha.outputs.sha }}')" >> "$GITHUB_OUTPUT"
+      - name: Choose the version
+        id: version
+        run: echo "tag=$(scripts/next-version.sh '${{ steps.sha.outputs.sha }}')" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: resolve
@@ -54,20 +55,20 @@ jobs:
       environment: staging
       sha: ${{ needs.resolve.outputs.sha }}
       alias: ${{ vars.STAGING_ALIAS }}
-      version: ${{ needs.resolve.outputs.candidate }}
+      version: ${{ needs.resolve.outputs.version }}
     secrets: inherit
 
-  candidate:
+  publish:
     needs: [resolve, deploy]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
-      - name: Tag the candidate and publish it as a pre-release
+      - name: Tag the version and publish it as a pre-release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          TAG: ${{ needs.resolve.outputs.candidate }}
+          TAG: ${{ needs.resolve.outputs.version }}
           SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           # The bot token tags: GITHUB_TOKEN cannot create a ref on a commit whose workflow files differ from main.
@@ -76,18 +77,17 @@ jobs:
             git fetch -q origin "refs/tags/$TAG:refs/tags/$TAG"
           fi
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            previous=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
-            notes=$(scripts/release-notes.sh "$TAG" "$previous")
-            # QA re-tests only what changed since the candidate they last saw
-            # (the previous -rc, or the one an urgent fix interrupted).
-            earlier=$(scripts/previous-candidate.sh "$TAG")
-            if [ -n "$earlier" ]; then
-              notes="**Changed since $earlier:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$earlier...$TAG"$'\n\n'"$notes"
+            released=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
+            notes=$(scripts/release-notes.sh "$TAG" "$released")
+            # QA re-tests only what changed since the version they last saw.
+            previous=$(scripts/previous-version.sh "$TAG")
+            if [ -n "$previous" ] && [ "$previous" != "$released" ]; then
+              notes="**Changed since $previous:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$previous...$TAG"$'\n\n'"$notes"
             fi
             gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --notes "$notes"
           fi
-          if [[ "$TAG" == *-rc.* ]]; then
-            echo "Staging runs release candidate \`$TAG\` (\`${SHA::7}\`). **Cut release** ships it as \`${TAG%-rc.*}\`." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)" = true ]; then
+            echo "Staging runs \`$TAG\` (\`${SHA::7}\`). After QA signs it off, **Cut release** ships this same version." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Staging runs \`$TAG\` (\`${SHA::7}\`), already released." >> "$GITHUB_STEP_SUMMARY"
           fi

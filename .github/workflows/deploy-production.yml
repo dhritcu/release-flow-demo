@@ -11,10 +11,10 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (v*). Cut release fills this in; an older tag rolls back."
+        description: "Version (v…). Cut release fills this in; by hand, only an older release (rollback)."
         required: true
       commit:
-        description: "Short SHA the tag must point at. Cut release fills it in so the approver sees it."
+        description: "Short commit the version must point at, shown to the approver (on the Releases page)."
         required: false
         default: ""
 
@@ -32,16 +32,18 @@ jobs:
     steps:
       - name: The input must be an existing v* tag
         id: tag
-        env: { GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}", COMMIT: "${{ inputs.commit }}" }
+        env: { GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}", COMMIT: "${{ inputs.commit }}", ACTOR: "${{ github.triggering_actor }}" }
         run: |
-          [[ "$TAG" == v* && "$TAG" != *-* ]] || { echo "::error::$TAG is not a release tag (release candidates ship through Cut release)."; exit 1; }
+          [[ "$TAG" == v* && "$TAG" != *-* ]] || { echo "::error::$TAG is not a version."; exit 1; }
           sha=$(gh api "repos/${{ github.repository }}/commits/refs/tags/$TAG" --jq .sha)
           [[ -z "$COMMIT" || "$sha" == "$COMMIT"* ]] || { echo "::error::$TAG points at $sha, not $COMMIT."; exit 1; }
-          # Only a version that went through staging ships: an existing release (rollback,
-          # retry) or a release candidate on the same commit (Cut release).
-          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            candidates=$(gh api "repos/${{ github.repository }}/git/matching-refs/tags/$TAG-rc." --jq '.[].object.sha')
-            grep -qx "$sha" <<<"$candidates" || { echo "::error::$TAG has no release candidate on $sha. Ship through Deploy staging and Cut release."; exit 1; }
+          # Only a version that went through staging ships. A new version (still a
+          # pre-release) ships only through Cut release, which checks QA's sign-off;
+          # people start this workflow by hand only to redeploy a release (rollback).
+          prerelease=$(gh release view "$TAG" --repo "${{ github.repository }}" --json isPrerelease --jq .isPrerelease 2>/dev/null) \
+            || { echo "::error::$TAG never went through staging. Ship through Deploy staging and Cut release."; exit 1; }
+          if [ "$prerelease" = true ] && [ "$ACTOR" != "github-actions[bot]" ]; then
+            echo "::error::$TAG is not released yet. Ship it with Cut release, which checks QA's sign-off."; exit 1
           fi
           echo "Deploying \`$TAG\` (\`$sha\`)." >> "$GITHUB_STEP_SUMMARY"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
@@ -55,19 +57,29 @@ jobs:
       version: ${{ inputs.tag }}
     secrets: inherit
 
-  release-notes:
-    needs: deploy
+  release:
+    needs: [resolve, deploy]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
-      - name: Publish release notes since the previous release
-        env: { GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}", REPO: "${{ github.repository }}" }
+      - name: Mark the version as released and give it its release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+          REPO: ${{ github.repository }}
         run: |
-          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            echo "Redeployed the existing release \`$TAG\` (rollback or retry); its notes stay as they are." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(gh release view "$TAG" --repo "$REPO" --json isPrerelease --jq .isPrerelease)" != true ]; then
+            echo "Redeployed the release \`$TAG\` (rollback or retry); its notes stay as they are." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           previous=$(gh release view --repo "$REPO" --json tagName --jq .tagName 2>/dev/null || true)
-          gh release create "$TAG" --repo "$REPO" --verify-tag --latest --title "$TAG" \
-            --notes "$(GITHUB_REPOSITORY="$REPO" scripts/release-notes.sh "$TAG" "$previous")"
+          notes=$(GITHUB_REPOSITORY="$REPO" scripts/release-notes.sh "$TAG" "$previous")
+          gh release edit "$TAG" --repo "$REPO" --prerelease=false --latest --notes "$notes"
+          # Every release gets release/<version>, so an urgent fix always has a branch to land on.
+          # The bot token creates it: GITHUB_TOKEN cannot create refs whose workflow files differ from main.
+          GH_TOKEN="$RELEASE_TOKEN" gh api "repos/$REPO/git/refs" -f ref="refs/heads/release/$TAG" -f sha="$SHA" >/dev/null 2>&1 \
+            || echo "release/$TAG already exists."
+          echo "Released \`$TAG\` and created \`release/$TAG\`." >> "$GITHUB_STEP_SUMMARY"
