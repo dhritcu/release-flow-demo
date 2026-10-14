@@ -1,5 +1,5 @@
 # Copies a fix that is already on main onto the release branch of what production
-# runs, and opens the hotfix PR. A person only reviews and merges it, then runs
+# runs (every release has one; older releases get it here), and opens the hotfix PR. A person only reviews and merges it, then runs
 # Deploy staging with the release branch and Cut release, as for any release.
 name: Start hotfix
 run-name: "Start hotfix from #${{ inputs.pr }}"

@@ -1,55 +1,47 @@
-# Ships the release candidate staging serves (the one QA approved): tags its commit
-# vYYYY.MM.DD.N, without the -rc.M, then starts the production deployment on that
-# tag. Nobody types a SHA or a version.
+# Ships the version staging runs, once QA signed it off: checks it, then starts
+# the production deployment of that same version. Nobody types a commit.
 #
-# The commit comes from staging itself (/api/version), not from GitHub's
+# What staging runs comes from staging itself (/api/version), not from GitHub's
 # deployment records: those store the workflow run's commit (main), not the
-# commit a run deploys, so they are wrong for a release branch or pinned SHA.
+# commit a run deploys, so they are wrong for a release branch.
 name: Cut release
-run-name: "Cut release from what staging serves"
+run-name: "Cut release ${{ inputs.version }}"
 
 on:
   workflow_dispatch:
     inputs:
-      candidate:
-        description: "The candidate QA signed off, e.g. v2026.10.14.1-rc.2. Stops if staging runs anything else."
+      version:
+        description: "The version QA signed off, e.g. v2026.10.14.2. Stops if staging runs anything else."
         required: true
 
 permissions:
-  contents: write
+  contents: read
   actions: write
 
 concurrency: { group: staging, cancel-in-progress: false }
 
 jobs:
-  tag:
+  ship:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
-      - name: Read the commit that staging serves
+      - name: Staging runs the version QA signed off, not yet released
         id: verify
+        env: { GH_TOKEN: "${{ github.token }}", EXPECTED: "${{ inputs.version }}" }
         run: |
-          sha=$(curl -fsS "https://${{ vars.STAGING_ALIAS }}/api/version" | jq -r .sha)
-          git cat-file -e "$sha^{commit}" || { echo "::error::Staging reports unknown commit $sha."; exit 1; }
-          echo "Staging serves $sha"
+          read -r sha version < <(curl -fsS "https://${{ vars.STAGING_ALIAS }}/api/version" | jq -r '"\(.sha) \(.version)"')
+          [ "$version" = "$EXPECTED" ] || { echo "::error::Staging runs $version, not $EXPECTED."; exit 1; }
+          [ "$(git rev-parse "refs/tags/$version^{commit}" 2>/dev/null)" = "$sha" ] || { echo "::error::$version does not point at the commit staging runs ($sha)."; exit 1; }
+          [ "$(gh release view "$version" --json isPrerelease --jq .isPrerelease)" = true ] || { echo "::error::$version is already released."; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-      # A candidate staged before a newer release shipped would silently undo it.
-      - name: The candidate includes what production runs
+      # A version staged before a newer release shipped would silently undo it.
+      - name: The version includes what production runs
         run: |
           production=$(curl -fsS "https://${{ vars.PRODUCTION_ALIAS }}/api/version" | jq -r .sha)
           scripts/includes-production.sh "${{ steps.verify.outputs.sha }}" "$production"
-      # GITHUB_TOKEN cannot create a ref on a commit whose workflow files differ
-      # from main, so tagging uses a token with the workflows permission.
-      - name: Create the tag and start the production deployment
-        env: { GH_TOKEN: "${{ secrets.RELEASE_TOKEN }}", SHA: "${{ steps.verify.outputs.sha }}", EXPECTED: "${{ inputs.candidate }}" }
+      - name: Start the production deployment
+        env: { GH_TOKEN: "${{ github.token }}", VERSION: "${{ inputs.version }}", SHA: "${{ steps.verify.outputs.sha }}" }
         run: |
-          # Ship the candidate staging runs: v2026.10.14.1-rc.2 becomes v2026.10.14.1.
-          rc=$(git tag --points-at "$SHA" --list 'v*-rc.*' | sort -V | tail -1)
-          [ -n "$rc" ] || { echo "::error::Staging runs $SHA, which has no release candidate tag. Run Deploy staging first."; exit 1; }
-          if [ "$rc" != "$EXPECTED" ]; then echo "::error::Staging runs $rc, not $EXPECTED."; exit 1; fi
-          tag="${rc%-rc.*}"
-          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then echo "::error::$tag is already released."; exit 1; fi
-          gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" >/dev/null
-          GH_TOKEN="${{ github.token }}" gh workflow run deploy-production.yml --ref main -f tag="$tag" -f commit="${SHA::7}"
-          echo "Tagged \`$tag\` (from \`$rc\`) → \`$SHA\` and started **Deploy production** on it." >> "$GITHUB_STEP_SUMMARY"
+          gh workflow run deploy-production.yml --ref main -f tag="$VERSION" -f commit="${SHA::7}"
+          echo "Started **Deploy production** for \`$VERSION\` (\`${SHA::7}\`)." >> "$GITHUB_STEP_SUMMARY"
