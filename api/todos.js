@@ -13,13 +13,13 @@ export default async function handler(req, res) {
       const dueOn = parseDueOn(req.body?.dueOn);
       const [todo] = await sql`
         insert into todos (title, urgent, due_on) values (${title}, ${urgent}, ${dueOn})
-        returning id, title, done, urgent, due_on`;
+        returning id, title, done, urgent, due_on, notes`;
       return res.status(201).json(todo);
     }
     if (req.method === "PATCH") {
       const [todo] = await sql`
         update todos set done = not done, completed_at = case when done then null else now() end where id = ${parseId(req.query.id)}
-        returning id, title, done, urgent, due_on`;
+        returning id, title, done, urgent, due_on, notes`;
       return todo ? res.status(200).json(todo) : res.status(404).json({ error: "Not found" });
     }
     res.setHeader("Allow", "GET, POST, PATCH");
