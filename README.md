@@ -25,8 +25,8 @@ is nothing to merge back.
 3. QA tests staging. Merges to `main` keep going and never move staging. If QA
    rejects something, fix or revert it on `main` and deploy staging again:
    `v2026.10.14.1-rc.2`.
-4. **Actions → Cut release → Run workflow**. Type the candidate QA signed off (optional
-   but recommended): it stops if staging runs anything else. It also stops if the
+4. **Actions → Cut release → Run workflow** with the candidate QA signed off (required):
+   it stops if staging runs anything else. It also stops if the
    candidate lacks something production runs. It ships the candidate
    staging runs as `v2026.10.14.1` (same commit, no `-rc`) and starts **Deploy
    production** for that tag. The pipeline always runs from `main`; only the code

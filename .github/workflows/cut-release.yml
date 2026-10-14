@@ -12,9 +12,8 @@ on:
   workflow_dispatch:
     inputs:
       candidate:
-        description: "Optional: the candidate QA signed off (v2026.10.14.1-rc.2). Stops if staging runs anything else."
-        required: false
-        default: ""
+        description: "The candidate QA signed off, e.g. v2026.10.14.1-rc.2. Stops if staging runs anything else."
+        required: true
 
 permissions:
   contents: write
@@ -48,7 +47,7 @@ jobs:
           # Ship the candidate staging runs: v2026.10.14.1-rc.2 becomes v2026.10.14.1.
           rc=$(git tag --points-at "$SHA" --list 'v*-rc.*' | sort -V | tail -1)
           [ -n "$rc" ] || { echo "::error::Staging runs $SHA, which has no release candidate tag. Run Deploy staging first."; exit 1; }
-          if [ -n "$EXPECTED" ] && [ "$rc" != "$EXPECTED" ]; then echo "::error::Staging runs $rc, not $EXPECTED."; exit 1; fi
+          if [ "$rc" != "$EXPECTED" ]; then echo "::error::Staging runs $rc, not $EXPECTED."; exit 1; fi
           tag="${rc%-rc.*}"
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then echo "::error::$tag is already released."; exit 1; fi
           gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" >/dev/null
