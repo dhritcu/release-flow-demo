@@ -77,7 +77,13 @@ jobs:
           fi
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             previous=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
-            gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --notes "$(scripts/release-notes.sh "$TAG" "$previous")"
+            notes=$(scripts/release-notes.sh "$TAG" "$previous")
+            # QA re-tests only what changed since the candidate they last saw.
+            earlier=$(git tag --list "${TAG%-rc.*}-rc.*" | sort -V | grep -B1 -x "$TAG" | head -1)
+            if [ -n "$earlier" ] && [ "$earlier" != "$TAG" ]; then
+              notes="**Changed since $earlier:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$earlier...$TAG"$'\n\n'"$notes"
+            fi
+            gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --notes "$notes"
           fi
           if [[ "$TAG" == *-rc.* ]]; then
             echo "Staging runs release candidate \`$TAG\` (\`${SHA::7}\`). **Cut release** ships it as \`${TAG%-rc.*}\`." >> "$GITHUB_STEP_SUMMARY"
